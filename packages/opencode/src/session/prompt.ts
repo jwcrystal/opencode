@@ -34,6 +34,7 @@ import * as CrossSpawnSpawner from "@/effect/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
 import { Command } from "../command"
 import { pathToFileURL, fileURLToPath } from "url"
+import { Config } from "../config/config"
 import { ConfigMarkdown } from "../config/markdown"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/util/error"
@@ -103,6 +104,7 @@ export namespace SessionPrompt {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const scope = yield* Scope.Scope
       const instruction = yield* Instruction.Service
+      const config = yield* Config.Service
 
       const state = yield* InstanceState.make(
         Effect.fn("SessionPrompt.state")(function* () {
@@ -1500,6 +1502,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
                 yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
+                const cfg = yield* config.get()
+                if (cfg.compaction?.microcompact !== false) {
+                  msgs = SessionCompaction.microcompact(msgs)
+                }
+
                 const [skills, env, instructions, modelMsgs] = yield* Effect.all([
                   Effect.promise(() => SystemPrompt.skills(agent)),
                   Effect.promise(() => SystemPrompt.environment(model)),
@@ -1553,7 +1560,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     return "continue" as const
                   }
                   handle.message.error = new MessageV2.ContextOverflowError({
-                    message: "Auto-compaction paused after repeated failures. Run /compact manually or start a new session.",
+                    message:
+                      "Auto-compaction paused after repeated failures. Run /compact manually or start a new session.",
                   }).toObject()
                   yield* sessions.updateMessage(handle.message)
                   return "break" as const
@@ -1739,6 +1747,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         Layer.provide(Session.defaultLayer),
         Layer.provide(Agent.defaultLayer),
         Layer.provide(Bus.layer),
+        Layer.provide(Config.defaultLayer),
         Layer.provide(CrossSpawnSpawner.defaultLayer),
       ),
     ),

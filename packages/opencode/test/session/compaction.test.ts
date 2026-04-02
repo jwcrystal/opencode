@@ -82,14 +82,11 @@ describe("session.compaction.compactSafe", () => {
     },
   })
 
-  const makeMsg = (parts: any[]) => ({
-    info: { id: "m1", role: "assistant" as const },
-    parts,
-  })
+  const makeMsg = (parts: any[]) => ({ info: { id: "m1", role: "assistant" as const }, parts }) as any
 
   test("only compacts whitelisted tools", () => {
     const msgs = [makeMsg([makeTool("read"), makeTool("edit"), makeTool("grep"), makeTool("skill")])]
-    const result = SessionCompaction.compactSafe(msgs)
+    const result = SessionCompaction.compactSafe(msgs) as any[]
     const parts = result[0].parts
     expect(parts[0].state.time.compacted).toBeDefined()
     expect(parts[0].state.attachments).toEqual([])
@@ -102,15 +99,15 @@ describe("session.compaction.compactSafe", () => {
 
   test("skips already-compacted tools", () => {
     const msgs = [makeMsg([makeTool("read", 999)])]
-    const result = SessionCompaction.compactSafe(msgs)
+    const result = SessionCompaction.compactSafe(msgs) as any[]
     expect(result[0].parts[0].state.time.compacted).toBe(999)
   })
 
   test("does not mutate originals", () => {
     const orig = [makeMsg([makeTool("read")])]
-    const origAtts = orig[0].parts[0].state.attachments
+    const origAtts = (orig as any[])[0].parts[0].state.attachments
     SessionCompaction.compactSafe(orig)
-    expect(orig[0].parts[0].state.attachments).toBe(origAtts)
+    expect((orig as any[])[0].parts[0].state.attachments).toBe(origAtts)
   })
 
   test("does not compact pending or running tool", () => {
@@ -130,17 +127,15 @@ describe("session.compaction.compactSafe", () => {
         },
       ]),
     ]
-    const result = SessionCompaction.compactSafe(msgs)
+    const result = SessionCompaction.compactSafe(msgs) as any[]
     expect(result[0].parts[0].state.time.compacted).toBeUndefined()
     expect(result[0].parts[1].state.time.compacted).toBeUndefined()
   })
 })
 
 describe("session.compaction.microcompact", () => {
-  const makeMsg = (role: string, parts: any[] = []) => ({
-    info: { id: `m${Math.random()}`, role: role as "user" | "assistant" },
-    parts,
-  })
+  const makeMsg = (role: string, parts: any[] = []) =>
+    ({ info: { id: `m${Math.random()}`, role: role as "user" | "assistant" }, parts }) as any
 
   const makeTool = (tool: string) => ({
     type: "tool" as const,
@@ -163,7 +158,7 @@ describe("session.compaction.microcompact", () => {
       makeMsg("assistant", [makeTool("grep")]),
       makeMsg("user"),
     ]
-    const result = SessionCompaction.microcompact(msgs, { protect: 1 })
+    const result = SessionCompaction.microcompact(msgs, { protect: 1 }) as any[]
     const first = result[1].parts[0]
     expect(first.state.time.compacted).toBeDefined()
     expect(first.state.attachments).toEqual([])
@@ -173,7 +168,7 @@ describe("session.compaction.microcompact", () => {
 
   test("preserves tools within protect window", () => {
     const msgs = [makeMsg("user"), makeMsg("assistant", [makeTool("read")]), makeMsg("user")]
-    const result = SessionCompaction.microcompact(msgs, { protect: 1 })
+    const result = SessionCompaction.microcompact(msgs, { protect: 1 }) as any[]
     const tool = result[1].parts[0]
     expect(tool.state.time.compacted).toBeUndefined()
     expect(tool.state.attachments.length).toBe(1)
@@ -187,7 +182,7 @@ describe("session.compaction.microcompact", () => {
       makeMsg("assistant", [makeTool("skill")]),
       makeMsg("user"),
     ]
-    const result = SessionCompaction.microcompact(msgs, { protect: 1 })
+    const result = SessionCompaction.microcompact(msgs, { protect: 1 }) as any[]
     expect(result[1].parts[0].state.time.compacted).toBeUndefined()
     expect(result[3].parts[0].state.time.compacted).toBeUndefined()
   })
@@ -195,8 +190,8 @@ describe("session.compaction.microcompact", () => {
   test("does not mutate originals", () => {
     const msgs = [makeMsg("user"), makeMsg("assistant", [makeTool("read")]), makeMsg("user")]
     SessionCompaction.microcompact(msgs, { protect: 0 })
-    expect(msgs[1].parts[0].state.time.compacted).toBeUndefined()
-    expect(msgs[1].parts[0].state.attachments.length).toBe(1)
+    expect((msgs as any[])[1].parts[0].state.time.compacted).toBeUndefined()
+    expect((msgs as any[])[1].parts[0].state.attachments.length).toBe(1)
   })
 })
 
