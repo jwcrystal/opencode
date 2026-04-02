@@ -66,7 +66,74 @@ function createModel(opts: {
   } as Provider.Model
 }
 
-const wide = () => ProviderTest.fake({ model: createModel({ context: 100_000, output: 32_000   })
+const wide = () => ProviderTest.fake({ model: createModel({ context: 100_000, output: 32_000 }) })
+
+describe("session.compaction.compactSafe", () => {
+  const makeTool = (tool: string, compacted?: number) => ({
+    type: "tool" as const,
+    tool,
+    callID: "fake",
+    state: {
+      status: "completed" as const,
+      output: "output",
+      input: {},
+      attachments: [{ id: "a1", type: "file", mime: "text/plain" }],
+      time: { start: 1, end: 2, ...(compacted ? { compacted } : {}) },
+    },
+  })
+
+  const makeMsg = (parts: any[]) => ({
+    info: { id: "m1", role: "assistant" as const },
+    parts,
+  })
+
+  test("only compacts whitelisted tools", () => {
+    const msgs = [makeMsg([makeTool("read"), makeTool("edit"), makeTool("grep"), makeTool("skill")])]
+    const result = SessionCompaction.compactSafe(msgs)
+    const parts = result[0].parts
+    expect(parts[0].state.time.compacted).toBeDefined()
+    expect(parts[0].state.attachments).toEqual([])
+    expect(parts[2].state.time.compacted).toBeDefined()
+    expect(parts[2].state.attachments).toEqual([])
+    expect(parts[1].state.time.compacted).toBeUndefined()
+    expect(parts[1].state.attachments.length).toBe(1)
+    expect(parts[3].state.time.compacted).toBeUndefined()
+  })
+
+  test("skips already-compacted tools", () => {
+    const msgs = [makeMsg([makeTool("read", 999)])]
+    const result = SessionCompaction.compactSafe(msgs)
+    expect(result[0].parts[0].state.time.compacted).toBe(999)
+  })
+
+  test("does not mutate originals", () => {
+    const orig = [makeMsg([makeTool("read")])]
+    const origAtts = orig[0].parts[0].state.attachments
+    SessionCompaction.compactSafe(orig)
+    expect(orig[0].parts[0].state.attachments).toBe(origAtts)
+  })
+
+  test("does not compact pending or running tool", () => {
+    const msgs = [
+      makeMsg([
+        {
+          type: "tool" as const,
+          tool: "read",
+          callID: "fake",
+          state: { status: "pending" as const, input: {}, time: { start: 1 } },
+        },
+        {
+          type: "tool" as const,
+          tool: "read",
+          callID: "fake2",
+          state: { status: "running" as const, input: {}, time: { start: 1 } },
+        },
+      ]),
+    ]
+    const result = SessionCompaction.compactSafe(msgs)
+    expect(result[0].parts[0].state.time.compacted).toBeUndefined()
+    expect(result[0].parts[1].state.time.compacted).toBeUndefined()
+  })
 })
 
 describe("session.compaction.budget", () => {
@@ -85,12 +152,18 @@ describe("session.compaction.budget", () => {
             create: Effect.fn("TestSessionProcessor.create")((input) => {
               const m = input.assistantMessage
               return Effect.succeed({
-                get message() { return m },
+                get message() {
+                  return m
+                },
                 abort: Effect.fn("TestSessionProcessor.abort")(() => Effect.void),
                 partFromToolCall() {
                   return {
-                    id: PartID.ascending(), messageID: m.id, sessionID: m.sessionID,
-                    type: "tool", callID: "fake", tool: "fake",
+                    id: PartID.ascending(),
+                    messageID: m.id,
+                    sessionID: m.sessionID,
+                    type: "tool",
+                    callID: "fake",
+                    tool: "fake",
                     state: { status: "pending", input: {}, raw: "" },
                   }
                 },
@@ -318,7 +391,11 @@ function capturingSequenceLayer(results: ("continue" | "compact")[], captured: A
   )
 }
 
-function sequenceRuntime(results: ("continue" | "compact")[], plugin = Plugin.defaultLayer, provider = ProviderTest.fake()) {
+function sequenceRuntime(
+  results: ("continue" | "compact")[],
+  plugin = Plugin.defaultLayer,
+  provider = ProviderTest.fake(),
+) {
   const bus = Bus.layer
   return ManagedRuntime.make(
     Layer.mergeAll(
@@ -1709,15 +1786,17 @@ describe("session.compaction.restore", () => {
             title: "done",
             metadata: {},
             time: { start: Date.now(), end: Date.now() },
-            attachments: [{
-              id: PartID.ascending(),
-              messageID: a.id,
-              sessionID: session.id,
-              type: "file",
-              mime: "text/plain",
-              filename: "foo.ts",
-              url: "file:///src/foo.ts",
-            }],
+            attachments: [
+              {
+                id: PartID.ascending(),
+                messageID: a.id,
+                sessionID: session.id,
+                type: "file",
+                mime: "text/plain",
+                filename: "foo.ts",
+                url: "file:///src/foo.ts",
+              },
+            ],
           },
         })
         const second = await user(session.id, "second")
@@ -1774,15 +1853,17 @@ describe("session.compaction.restore", () => {
             title: "done",
             metadata: {},
             time: { start: Date.now(), end: Date.now(), compacted: Date.now() },
-            attachments: [{
-              id: PartID.ascending(),
-              messageID: a.id,
-              sessionID: session.id,
-              type: "file",
-              mime: "text/plain",
-              filename: "foo.ts",
-              url: "file:///src/foo.ts",
-            }],
+            attachments: [
+              {
+                id: PartID.ascending(),
+                messageID: a.id,
+                sessionID: session.id,
+                type: "file",
+                mime: "text/plain",
+                filename: "foo.ts",
+                url: "file:///src/foo.ts",
+              },
+            ],
           },
         })
         const second = await user(session.id, "second")
@@ -1815,10 +1896,7 @@ describe("session.compaction.restore", () => {
   test("does not restore when restore_attachments is false", async () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
-        await Bun.write(
-          path.join(dir, "opencode.json"),
-          JSON.stringify({ compaction: { restore_attachments: false } }),
-        )
+        await Bun.write(path.join(dir, "opencode.json"), JSON.stringify({ compaction: { restore_attachments: false } }))
       },
     })
     await Instance.provide({
@@ -1841,15 +1919,17 @@ describe("session.compaction.restore", () => {
             title: "done",
             metadata: {},
             time: { start: Date.now(), end: Date.now() },
-            attachments: [{
-              id: PartID.ascending(),
-              messageID: a.id,
-              sessionID: session.id,
-              type: "file",
-              mime: "text/plain",
-              filename: "foo.ts",
-              url: "file:///src/foo.ts",
-            }],
+            attachments: [
+              {
+                id: PartID.ascending(),
+                messageID: a.id,
+                sessionID: session.id,
+                type: "file",
+                mime: "text/plain",
+                filename: "foo.ts",
+                url: "file:///src/foo.ts",
+              },
+            ],
           },
         })
         const second = await user(session.id, "second")
@@ -1901,15 +1981,17 @@ describe("session.compaction.restore", () => {
             title: "done",
             metadata: {},
             time: { start: Date.now(), end: Date.now() },
-            attachments: [{
-              id: PartID.ascending(),
-              messageID: a.id,
-              sessionID: session.id,
-              type: "file",
-              mime: "image/png",
-              filename: "img.png",
-              url: "file:///src/img.png",
-            }],
+            attachments: [
+              {
+                id: PartID.ascending(),
+                messageID: a.id,
+                sessionID: session.id,
+                type: "file",
+                mime: "image/png",
+                filename: "img.png",
+                url: "file:///src/img.png",
+              },
+            ],
           },
         })
         const second = await user(session.id, "second")
@@ -1962,15 +2044,17 @@ describe("session.compaction.restore", () => {
             title: "done",
             metadata: {},
             time: { start: Date.now(), end: Date.now() },
-            attachments: [{
-              id: PartID.ascending(),
-              messageID: a.id,
-              sessionID: session.id,
-              type: "file",
-              mime: "text/plain",
-              filename: "huge.ts",
-              url: `file:///src/${hugeContent}.ts`,
-            }],
+            attachments: [
+              {
+                id: PartID.ascending(),
+                messageID: a.id,
+                sessionID: session.id,
+                type: "file",
+                mime: "text/plain",
+                filename: "huge.ts",
+                url: `file:///src/${hugeContent}.ts`,
+              },
+            ],
           },
         })
         const second = await user(session.id, "second")

@@ -31,6 +31,42 @@ export namespace SessionCompaction {
   const POST_COMPACT_MAX_ATTACHMENTS = 5
   const POST_COMPACT_MAX_FILE_TOKENS = 5_000
 
+  // Read-only / high-output tools safe to compact. Their output is reference material,
+  // not state-changing. Stale quickly — safe to strip from old turns.
+  const COMPACTABLE_TOOLS = new Set([
+    "read",
+    "bash",
+    "grep",
+    "glob",
+    "list",
+    "codesearch",
+    "lsp",
+    "websearch",
+    "webfetch",
+  ])
+
+  // Compacts only whitelisted tools. Used by microcompact.
+  // Does NOT mutate originals — returns new arrays.
+  export const compactSafe = (msgs: MessageV2.WithParts[]) =>
+    msgs.map((msg) => ({
+      ...msg,
+      parts: msg.parts.map((part) =>
+        part.type === "tool" &&
+        part.state.status === "completed" &&
+        !part.state.time.compacted &&
+        COMPACTABLE_TOOLS.has(part.tool)
+          ? {
+              ...part,
+              state: {
+                ...part.state,
+                time: { ...part.state.time, compacted: Date.now() },
+                attachments: [],
+              },
+            }
+          : part,
+      ),
+    }))
+
   // Marks all completed tool parts as compacted and strips attachments.
   // Operates on cloned messages — originals are never mutated.
   const compactTools = (msgs: MessageV2.WithParts[]) =>
@@ -285,16 +321,18 @@ When constructing the summary, try to stick to this template:
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           const attemptMessages =
-            attempt === 0 ? messages
-            : attempt === 1 ? compactTools(messages)
-            : keepRecent(compactTools(messages), PTL_KEEP_RECENT_TURNS)
+            attempt === 0
+              ? messages
+              : attempt === 1
+                ? compactTools(messages)
+                : keepRecent(compactTools(messages), PTL_KEEP_RECENT_TURNS)
 
           strategy = attempt === 0 ? "full" : attempt === 1 ? "compact-tools" : "recent-turns"
 
           const clonedMsgs = structuredClone(attemptMessages)
           yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: clonedMsgs })
           const modelMessages = yield* Effect.promise(() =>
-            MessageV2.toModelMessages(clonedMsgs, model, { stripMedia: true })
+            MessageV2.toModelMessages(clonedMsgs, model, { stripMedia: true }),
           )
 
           const summary: MessageV2.Assistant = {
@@ -328,10 +366,7 @@ When constructing the summary, try to stick to this template:
               sessionID: input.sessionID,
               tools: {},
               system: [],
-              messages: [
-                ...modelMessages,
-                { role: "user", content: [{ type: "text", text: prompt }] },
-              ],
+              messages: [...modelMessages, { role: "user", content: [{ type: "text", text: prompt }] }],
               model,
               maxOutputTokens: cfg.compaction?.max_output_tokens ?? COMPACTION_MAX_OUTPUT_TOKENS,
             })
