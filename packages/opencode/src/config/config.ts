@@ -959,16 +959,40 @@ export namespace Config {
             .min(0)
             .optional()
             .describe("Token buffer for compaction. Leaves enough window to avoid overflow during compaction."),
-          max_failures: z.number().int().min(1).optional().default(3)
+          max_failures: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .default(3)
             .describe("Max consecutive auto-compaction failures before stopping (default: 3)"),
-          max_retries: z.number().int().min(0).optional().default(2)
+          max_retries: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .default(2)
             .describe("Max PTL retry attempts before giving up (default: 2)"),
-          max_output_tokens: z.number().int().min(1).optional()
+          max_output_tokens: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
             .describe("Max output tokens for compaction summary (default: 20000)"),
-          post_budget: z.number().int().min(1).optional()
+          post_budget: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
             .describe("Post-compaction context budget in tokens (default: 50000)"),
-          restore_attachments: z.boolean().optional()
+          restore_attachments: z
+            .boolean()
+            .optional()
             .describe("Restore tool attachments after compaction (default: true)"),
+          microcompact: z
+            .boolean()
+            .optional()
+            .describe("Enable automatic micro-pruning before each API call (default: true)"),
         })
         .optional(),
       experimental: z

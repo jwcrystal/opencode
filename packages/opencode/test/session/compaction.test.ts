@@ -136,6 +136,70 @@ describe("session.compaction.compactSafe", () => {
   })
 })
 
+describe("session.compaction.microcompact", () => {
+  const makeMsg = (role: string, parts: any[] = []) => ({
+    info: { id: `m${Math.random()}`, role: role as "user" | "assistant" },
+    parts,
+  })
+
+  const makeTool = (tool: string) => ({
+    type: "tool" as const,
+    tool,
+    callID: "fake",
+    state: {
+      status: "completed" as const,
+      output: "output",
+      input: {},
+      attachments: [{ id: "a1", type: "file", mime: "text/plain" }],
+      time: { start: 1, end: 2 },
+    },
+  })
+
+  test("compacts messages beyond protect window", () => {
+    const msgs = [
+      makeMsg("user"),
+      makeMsg("assistant", [makeTool("read")]),
+      makeMsg("user"),
+      makeMsg("assistant", [makeTool("grep")]),
+      makeMsg("user"),
+    ]
+    const result = SessionCompaction.microcompact(msgs, { protect: 1 })
+    const first = result[1].parts[0]
+    expect(first.state.time.compacted).toBeDefined()
+    expect(first.state.attachments).toEqual([])
+    const second = result[3].parts[0]
+    expect(second.state.time.compacted).toBeDefined()
+  })
+
+  test("preserves tools within protect window", () => {
+    const msgs = [makeMsg("user"), makeMsg("assistant", [makeTool("read")]), makeMsg("user")]
+    const result = SessionCompaction.microcompact(msgs, { protect: 1 })
+    const tool = result[1].parts[0]
+    expect(tool.state.time.compacted).toBeUndefined()
+    expect(tool.state.attachments.length).toBe(1)
+  })
+
+  test("does not compact non-whitelisted tools even when old", () => {
+    const msgs = [
+      makeMsg("user"),
+      makeMsg("assistant", [makeTool("edit")]),
+      makeMsg("user"),
+      makeMsg("assistant", [makeTool("skill")]),
+      makeMsg("user"),
+    ]
+    const result = SessionCompaction.microcompact(msgs, { protect: 1 })
+    expect(result[1].parts[0].state.time.compacted).toBeUndefined()
+    expect(result[3].parts[0].state.time.compacted).toBeUndefined()
+  })
+
+  test("does not mutate originals", () => {
+    const msgs = [makeMsg("user"), makeMsg("assistant", [makeTool("read")]), makeMsg("user")]
+    SessionCompaction.microcompact(msgs, { protect: 0 })
+    expect(msgs[1].parts[0].state.time.compacted).toBeUndefined()
+    expect(msgs[1].parts[0].state.attachments.length).toBe(1)
+  })
+})
+
 describe("session.compaction.budget", () => {
   test("uses compaction-specific max output tokens", async () => {
     await using tmp = await tmpdir()

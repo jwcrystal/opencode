@@ -67,6 +67,24 @@ export namespace SessionCompaction {
       ),
     }))
 
+  const MICROCOMPACT_PROTECT_TURNS = 2
+
+  export function microcompact(msgs: MessageV2.WithParts[], opts?: { protect?: number }): MessageV2.WithParts[] {
+    const protect = opts?.protect ?? MICROCOMPACT_PROTECT_TURNS
+    const total = msgs.reduce((n, m) => n + (m.info.role === "user" ? 1 : 0), 0)
+    if (total <= protect + 1) return [...msgs]
+    let turns = 0
+    let cut = 0
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].info.role === "user") turns++
+      if (turns >= protect) {
+        cut = i
+        break
+      }
+    }
+    return [...compactSafe(msgs.slice(0, cut)), ...msgs.slice(cut)]
+  }
+
   // Marks all completed tool parts as compacted and strips attachments.
   // Operates on cloned messages — originals are never mutated.
   const compactTools = (msgs: MessageV2.WithParts[]) =>
